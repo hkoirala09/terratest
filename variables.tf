@@ -1,7 +1,3 @@
-terraform {
-  experiments = ["module_variable_optional_attrs"]
-}
-
 variable "TFC_PROJECT_NAME" {
   default = "Default Project"
 }
@@ -109,9 +105,10 @@ variable "mongo_databases" {
   description = "MongoDB databases configuration"
   type = map(object({
     name  = string
-    throughput = optional(number)
-    autoscale_max_throughput = optional(number)
+    throughput = number
+    autoscale_max_throughput = number
   }))
+  default = {}
 }
 
 variable "mongo_collections" {
@@ -121,10 +118,11 @@ variable "mongo_collections" {
     database_name = string
     default_ttl_seconds = number
     shard_key = string
-    throughput = optional(number)
-    autoscale_max_throughput = optional(number)
+    throughput = number
+    autoscale_max_throughput = number
     keys = list(string)
   }))
+  default = {}
 }
 
 variable "private_endpoint_name" {
