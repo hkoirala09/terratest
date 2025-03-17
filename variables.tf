@@ -105,8 +105,8 @@ variable "mongo_databases" {
   description = "MongoDB databases configuration"
   type = map(object({
     name  = string
-    throughput = number
-    autoscale_max_throughput = number
+    throughput = optional(number)
+    autoscale_max_throughput = optional(number)
   }))
   default = {}
 }
@@ -118,8 +118,8 @@ variable "mongo_collections" {
     database_name = string
     default_ttl_seconds = number
     shard_key = string
-    throughput = number
-    autoscale_max_throughput = number
+    throughput = optional(number)
+    autoscale_max_throughput = optional(number)
     keys = list(string)
   }))
   default = {}
