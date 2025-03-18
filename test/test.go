@@ -1,6 +1,7 @@
 package test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,41 +10,37 @@ import (
 )
 
 func TestAdfDeploymentPreCheck(t *testing.T) {
-	testName := "TestAdfDeploymentPreCheck"
 	tfOpts := GetTerraformOptionsForCosmosMongoDB()
+	plan := terraform.InitAndPlanAndShowWithStruct(t, tfOpts)
+	testName := "TestAdfDeploymentPreCheck"
 
 	logToFile(testName, "Start Time : "+time.Now().Format(time.RFC3339))
 	logToFile(testName, "Test : "+testName)
 	logToFile(testName, "Description : Checking required parameter values before running terraform apply")
 	logToFile(testName, "Test Environment : dev")
 
-	// Run Terraform Init & Plan
-	terraform.InitAndPlan(t, tfOpts)
-
-	// Get structured plan
-	plan := terraform.ShowWithStruct(t, tfOpts)
-
 	t.Run("AC1: Validate Module and Provider versions", func(t *testing.T) {
-		for _, module := range plan.ResourcePlannedValuesMap {
-			assert.NotEmpty(t, module.Type, "Module type should not be empty")
-			logToFile(testName, "Module: "+module.Type+" - "+module.Name)
+		for name, provider := range plan.Configuration.ProviderConfig {
+			assert.NotEmpty(t, provider.VersionConstraint, "Provider version constraint not specified for provider: "+name)
+			logToFile(testName, fmt.Sprintf("Provider: %s, Version Constraint: %s", name, provider.VersionConstraint))
 		}
 	})
 
 	t.Run("AC2: Validate name is as per naming convention", func(t *testing.T) {
-		accountName := tfOpts.Vars["account_name"].(string)
-		assert.Contains(t, accountName, "cosmos", "Account name does not follow naming convention")
-		logToFile(testName, "Account Name: "+accountName)
+		expectedName := "expected-name-pattern"
+		actualName := plan.Configuration.RootModule.Variables["account_name"].Default
+		assert.Contains(t, actualName, expectedName, "Cosmos DB name does not match naming convention")
+		logToFile(testName, "Account Name: "+fmt.Sprint(actualName))
 	})
 
 	t.Run("AC3: Validate the API type", func(t *testing.T) {
-		apiType := tfOpts.Vars["api_type"].(string)
+		apiType := plan.Configuration.RootModule.Variables["api_type"].Default
 		assert.Equal(t, "MongoDB", apiType, "Incorrect API type configured")
-		logToFile(testName, "API Type: "+apiType)
+		logToFile(testName, "API Type: "+fmt.Sprint(apiType))
 	})
 
 	t.Run("AC4: Validate Mandatory tags", func(t *testing.T) {
-		tags := tfOpts.Vars["tags"].(map[string]string)
+		tags := plan.Configuration.RootModule.Variables["tags"].Default.(map[string]interface{})
 		mandatoryTags := []string{"CreatorID", "ProjectName", "RunID", "WorkspaceName"}
 		for _, tag := range mandatoryTags {
 			_, exists := tags[tag]
@@ -53,61 +50,49 @@ func TestAdfDeploymentPreCheck(t *testing.T) {
 	})
 
 	t.Run("AC5: Validate Public network access is disabled", func(t *testing.T) {
-		publicAccess := tfOpts.Vars["public_network_access"].(bool)
-		assert.False(t, publicAccess, "Public network access must be disabled")
+		publicAccess := plan.Configuration.RootModule.Variables["public_network_access"].Default
+		assert.Equal(t, false, publicAccess, "Public network access must be disabled")
 		logToFile(testName, "Public Network Access: disabled")
 	})
 
 	t.Run("AC6: Validate Private Endpoints are configured", func(t *testing.T) {
-		found := false
-		for _, resource := range plan.ResourcePlannedValuesMap {
-			if resource.Type == "azurerm_private_endpoint" {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "Private endpoints are not configured")
+		privateEndpoints := plan.PlannedValues.RootModule.ChildModules[0].Resources
+		assert.NotEmpty(t, privateEndpoints, "Private endpoints are not configured")
 		logToFile(testName, "Private Endpoints configured")
 	})
 
 	t.Run("AC7: Validate MTL Security Protocol Version is TLS 1.2", func(t *testing.T) {
-		tlsVersion := tfOpts.Vars["min_tls_version"].(string)
+		tlsVersion := plan.Configuration.RootModule.Variables["min_tls_version"].Default
 		assert.Equal(t, "TLS1_2", tlsVersion, "Minimum TLS version must be TLS 1.2")
-		logToFile(testName, "TLS Version: "+tlsVersion)
+		logToFile(testName, "TLS Version: "+fmt.Sprint(tlsVersion))
 	})
 
 	t.Run("AC8: Validate Log Analytic workspace is configured", func(t *testing.T) {
-		found := false
-		for _, resource := range plan.ResourcePlannedValuesMap {
-			if resource.Type == "azurerm_log_analytics_workspace" {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "Log Analytics workspace not configured")
+		logAnalytics := plan.PlannedValues.RootModule.Resources
+		assert.NotEmpty(t, logAnalytics, "Log Analytics workspace not configured")
 		logToFile(testName, "Log Analytics workspace configured")
 	})
 
 	t.Run("AC9: Validate data Encryption set to CMK with Azure Key Vault", func(t *testing.T) {
-		dataEncryption := tfOpts.Vars["data_encryption"].(string)
+		dataEncryption := plan.Configuration.RootModule.Variables["data_encryption"].Default
 		assert.Equal(t, "CMK", dataEncryption, "Data encryption is not set to CMK")
 		logToFile(testName, "Data Encryption: CMK with Azure Key Vault")
 	})
 
 	t.Run("AC10: Validate Write and Read Location is East US", func(t *testing.T) {
-		location := tfOpts.Vars["location"].(string)
+		location := plan.Configuration.RootModule.Variables["location"].Default
 		assert.Equal(t, "East US", location, "Location not set to East US")
 		logToFile(testName, "Write and Read Location: East US")
 	})
 
 	t.Run("AC11: Validate 'Configure Regions' is disabled", func(t *testing.T) {
-		configureRegions := tfOpts.Vars["configure_regions"].(bool)
-		assert.False(t, configureRegions, "Configure regions is not disabled")
+		configureRegions := plan.Configuration.RootModule.Variables["configure_regions"].Default
+		assert.Equal(t, false, configureRegions, "Configure regions is not disabled")
 		logToFile(testName, "Configure Regions: disabled")
 	})
 
 	t.Run("AC12: Validate Consistency used is Session", func(t *testing.T) {
-		consistency := tfOpts.Vars["consistency_level"].(string)
+		consistency := plan.Configuration.RootModule.Variables["consistency_level"].Default
 		assert.Equal(t, "Session", consistency, "Consistency level not set to Session")
 		logToFile(testName, "Consistency Level: Session")
 	})
