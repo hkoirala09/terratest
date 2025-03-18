@@ -1,30 +1,51 @@
 package test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
+	"testing"
 	"time"
+
+	"github.com/gruntwork-io/terratest/modules/terraform"
 )
 
-func logToFile(testName, message string) {
-	logDir := filepath.Join("logs")
-	if err := os.MkdirAll(logDir, os.ModePerm); err != nil {
-		fmt.Println("Error creating logs directory:", err)
-		return
-	}
+// LogToFile logs the given message into a log file
+func LogToFile(testName string, message string) {
+	currentTime := time.Now().Format("2006-01-02T15_04_05")
+	logFileName := fmt.Sprintf("%s-%s.log", testName, currentTime)
 
-	timeStamp := time.Now().Format("2006-01-02T15_04_05")
-	logFile := filepath.Join(logDir, fmt.Sprintf("%s-%s.log", testName, timeStamp))
-
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Println("Error opening log file:", err)
+		fmt.Println("Error creating log file:", err)
 		return
 	}
 	defer f.Close()
 
-	if _, err := f.WriteString(fmt.Sprintf("%s\n", message)); err != nil {
-		fmt.Println("Error writing to log file:", err)
+	logger := fmt.Sprintf("%s\n", message)
+	f.WriteString(logger)
+}
+
+// LoadExpectedValues loads expected values from JSON file
+func LoadExpectedValues(path string) (map[string]interface{}, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	var values map[string]interface{}
+	if err = json.Unmarshal(data, &values); err != nil {
+		return nil, err
+	}
+
+	return values, nil
+}
+
+// GetTerraformOptions returns Terraform options for the given module
+func GetTerraformOptions(t *testing.T, terraformDir string, vars map[string]interface{}) *terraform.Options {
+	return &terraform.Options{
+		TerraformDir: terraformDir,
+		Vars:         vars,
+		NoColor:      true,
 	}
 }
