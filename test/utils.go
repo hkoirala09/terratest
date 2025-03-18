@@ -2,50 +2,45 @@ package test
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
+	"io/ioutil"
 	"testing"
-	"time"
 
-	"github.com/gruntwork-io/terratest/modules/terraform"
+	"github.com/stretchr/testify/assert"
 )
 
-// LogToFile logs the given message into a log file
-func LogToFile(testName string, message string) {
-	currentTime := time.Now().Format("2006-01-02T15_04_05")
-	logFileName := fmt.Sprintf("%s-%s.log", testName, currentTime)
+// Load expected values from JSON file
+func LoadExpectedValues(t *testing.T, env string) map[string]interface{} {
+	filePath := "testdata/" + env + "/expected_values.json"
+	data, err := ioutil.ReadFile(filePath)
+	assert.NoError(t, err, "Error reading expected values file")
 
-	f, err := os.OpenFile(logFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Println("Error creating log file:", err)
-		return
-	}
-	defer f.Close()
+	var expected map[string]interface{}
+	err = json.Unmarshal(data, &expected)
+	assert.NoError(t, err, "Error unmarshalling expected values JSON")
 
-	logger := fmt.Sprintf("%s\n", message)
-	f.WriteString(logger)
+	return expected
 }
 
-// LoadExpectedValues loads expected values from JSON file
-func LoadExpectedValues(path string) (map[string]interface{}, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
+// Helper to validate tags
+func ValidateMandatoryTags(t *testing.T, actualTags map[string]interface{}) {
+	mandatoryTags := []string{"CreatorID", "ProjectName", "RunID", "WorkspaceName"}
+	for _, tag := range mandatoryTags {
+		_, exists := actualTags[tag]
+		assert.True(t, exists, "Missing mandatory tag: "+tag)
 	}
-
-	var values map[string]interface{}
-	if err = json.Unmarshal(data, &values); err != nil {
-		return nil, err
-	}
-
-	return values, nil
 }
 
-// GetTerraformOptions returns Terraform options for the given module
-func GetTerraformOptions(t *testing.T, terraformDir string, vars map[string]interface{}) *terraform.Options {
-	return &terraform.Options{
-		TerraformDir: terraformDir,
-		Vars:         vars,
-		NoColor:      true,
-	}
+// Helper to validate naming convention
+func ValidateNamingConvention(t *testing.T, actualName, expectedPattern string) {
+	assert.Contains(t, actualName, expectedPattern, "Resource name does not follow naming convention")
+}
+
+// Helper to check boolean conditions clearly
+func ValidateBooleanValue(t *testing.T, actual, expected bool, message string) {
+	assert.Equal(t, expected, actual, message)
+}
+
+// Helper to validate string values clearly
+func ValidateStringValue(t *testing.T, actual, expected, message string) {
+	assert.Equal(t, expected, actual, message)
 }
