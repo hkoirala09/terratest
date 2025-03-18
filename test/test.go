@@ -98,4 +98,3 @@ func TestAdfDeploymentPreCheck(t *testing.T) {
 
 	logToFile(testName, "End Time : "+time.Now().Format(time.RFC3339))
 }
-\
