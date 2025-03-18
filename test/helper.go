@@ -5,7 +5,6 @@ import (
 	"github.com/gruntwork-io/terratest/modules/terraform"
 )
 
-// GetTerraformOptions retrieves terraform options
 func GetTerraformOptions() *terraform.Options {
 	return &terraform.Options{
 		TerraformDir: "../terraform/modules/cosmos-mongodb",
@@ -13,28 +12,12 @@ func GetTerraformOptions() *terraform.Options {
 	}
 }
 
-// DeployResource executes terraform apply
-func DeployResource(t *testing.T, resourceType, testName string) bool {
-	tfOpts := GetTerraformOptions()
-	logToFile(testName, "Terraform Apply Started: "+resourceType)
-
-	if _, err := terraform.InitAndApplyE(t, tfOpts); err != nil {
-		logToFile(testName, "Terraform Apply Error: "+err.Error())
-		return false
-	}
-
-	logToFile(testName, "Terraform Apply Completed: "+resourceType)
-	return true
+func DeployResource(t *testing.T, resourceType, testName string) (string, error) {
+	opts := GetTerraformOptions()
+	return terraform.ApplyE(t, opts)
 }
 
-// DeleteResource executes terraform destroy
-func DeleteResource(t *testing.T, resourceType, testName string) {
-	tfOpts := GetTerraformOptions()
-	logToFile(testName, "Terraform Destroy Started: "+resourceType)
-
-	if err := terraform.DestroyE(t, tfOpts); err != nil {
-		logToFile(testName, "Terraform Destroy Error: "+err.Error())
-	} else {
-		logToFile(testName, "Terraform Destroy Completed: "+resourceType)
-	}
+func DeleteResource(t *testing.T, resourceType, testName string) (string, error) {
+	opts := GetTerraformOptions()
+	return terraform.DestroyE(t, opts)
 }

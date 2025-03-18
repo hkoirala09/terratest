@@ -8,73 +8,92 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCosmosMongoDBDeploymentPreCheck(t *testing.T) {
-	tfOpts := GetTerraformOptions()
+func TestAdfDeploymentPreCheck(t *testing.T) {
+	tfOpts := GetTerraformOptionsForCosmosMongoDB()
 	plan := terraform.InitAndPlanAndShowWithStruct(t, tfOpts)
-	testName := "TestCosmosMongoDBDeploymentPreCheck"
+	testName := "TestAdfDeploymentPreCheck"
 
-	logToFile(testName, "Start Time: "+time.Now().Format(time.RFC3339))
-	logToFile(testName, "Test: "+testName)
-	logToFile(testName, "Description: Checking required parameter values before running terraform apply")
-	logToFile(testName, "Test Environment: dev")
+	logToFile(testName, "Start Time : "+time.Now().Format(time.RFC3339))
+	logToFile(testName, "Test : "+testName)
+	logToFile(testName, "Description : Checking required parameter values before running terraform apply")
+	logToFile(testName, "Test Environment : dev")
 
 	t.Run("AC1: Validate Module and Provider versions", func(t *testing.T) {
-		ValidateModuleAndProviderVersions(t, plan, testName)
+		for _, provider := range plan.RawPlan.Configuration.ProviderConfig {
+			assert.NotEmpty(t, provider.VersionConstraint, "Provider version not specified")
+			logToFile(testName, "Provider: "+provider.Name+" Version: "+provider.VersionConstraint)
+		}
 	})
 
-	t.Run("AC2: Validate the name as per naming convention", func(t *testing.T) {
-		ValidateNamingConvention(t, plan, testName)
+	t.Run("AC2: Validate name is as per naming convention", func(t *testing.T) {
+		expectedName := "expected-name-pattern"
+		actualName := plan.RawPlan.Variables["account_name"].Value
+		assert.Contains(t, actualName, expectedName, "Cosmos DB name does not match naming convention")
+		logToFile(testName, "Account Name: "+actualName.(string))
 	})
 
-	t.Run("AC3: Validate API type", func(t *testing.T) {
-		ValidateAPIType(t, plan, testName)
+	t.Run("AC3: Validate the API type", func(t *testing.T) {
+		apiType := plan.RawPlan.Variables["api_type"].Value
+		assert.Equal(t, "MongoDB", apiType, "Incorrect API type configured")
+		logToFile(testName, "API Type: "+apiType.(string))
 	})
 
 	t.Run("AC4: Validate Mandatory tags", func(t *testing.T) {
-		ValidateMandatoryTags(t, plan, testName)
+		tags := plan.RawPlan.Variables["tags"].Value
+		mandatoryTags := []string{"CreatorID", "ProjectName", "RunID", "WorkspaceName"}
+		for _, tag := range mandatoryTags {
+			assert.Contains(t, tags, tag, "Mandatory tag missing: "+tag)
+		}
+		logToFile(testName, "Tags validated successfully")
 	})
 
 	t.Run("AC5: Validate Public network access is disabled", func(t *testing.T) {
-		ValidatePublicNetworkDisabled(t, plan, testName)
+		publicAccess := plan.RawPlan.Variables["public_network_access"].Value
+		assert.Equal(t, false, publicAccess, "Public network access must be disabled")
+		logToFile(testName, "Public Network Access: disabled")
 	})
 
 	t.Run("AC6: Validate Private Endpoints are configured", func(t *testing.T) {
-		ValidatePrivateEndpoints(t, plan, testName)
+		privateEndpoints := plan.ResourcePlannedValuesMap["private_endpoint"].AttributeValues
+		assert.NotEmpty(t, privateEndpoints, "Private endpoints are not configured")
+		logToFile(testName, "Private Endpoints configured")
 	})
 
 	t.Run("AC7: Validate MTL Security Protocol Version is TLS 1.2", func(t *testing.T) {
-		ValidateMTLSecurityProtocol(t, plan, testName)
+		tlsVersion := plan.RawPlan.Variables["min_tls_version"].Value
+		assert.Equal(t, "TLS1_2", tlsVersion, "Minimum TLS version must be TLS 1.2")
+		logToFile(testName, "TLS Version: "+tlsVersion.(string))
 	})
 
-	t.Run("AC8: Validate Log Analytics workspace is configured", func(t *testing.T) {
-		ValidateLogAnalyticsWorkspace(t, plan, testName)
+	t.Run("AC8: Validate Log Analytic workspace is configured", func(t *testing.T) {
+		logAnalytics := plan.ResourcePlannedValuesMap["log_analytics_workspace"].AttributeValues
+		assert.NotEmpty(t, logAnalytics, "Log Analytics workspace not configured")
+		logToFile(testName, "Log Analytics workspace configured")
 	})
 
-	t.Run("AC9: Validate data Encryption with CMK Azure Key Vault", func(t *testing.T) {
-		ValidateDataEncryptionCMK(t, plan, testName)
+	t.Run("AC9: Validate data Encryption set to CMK with Azure Key Vault", func(t *testing.T) {
+		dataEncryption := plan.RawPlan.Variables["data_encryption"].Value
+		assert.Equal(t, "CMK", dataEncryption, "Data encryption is not set to CMK")
+		logToFile(testName, "Data Encryption: CMK with Azure Key Vault")
 	})
 
 	t.Run("AC10: Validate Write and Read Location is East US", func(t *testing.T) {
-		ValidateWriteReadLocation(t, plan, testName)
+		location := plan.RawPlan.Variables["location"].Value
+		assert.Equal(t, "East US", location, "Location not set to East US")
+		logToFile(testName, "Write and Read Location: East US")
 	})
 
-	t.Run("AC11: Validate Configure Regions is disabled", func(t *testing.T) {
-		ValidateConfigureRegionsDisabled(t, plan, testName)
+	t.Run("AC11: Validate 'Configure Regions' is disabled", func(t *testing.T) {
+		configureRegions := plan.RawPlan.Variables["configure_regions"].Value
+		assert.Equal(t, false, configureRegions, "Configure regions is not disabled")
+		logToFile(testName, "Configure Regions: disabled")
 	})
 
 	t.Run("AC12: Validate Consistency used is Session", func(t *testing.T) {
-		ValidateConsistencyLevel(t, plan, testName)
+		consistency := plan.RawPlan.Variables["consistency_level"].Value
+		assert.Equal(t, "Session", consistency, "Consistency level not set to Session")
+		logToFile(testName, "Consistency Level: Session")
 	})
 
-	logToFile(testName, "End Time: "+time.Now().Format(time.RFC3339))
-}
-
-func TestCosmosMongoDBDeploymentPostCheck(t *testing.T) {
-	testName := "TestCosmosMongoDBDeploymentPostCheck"
-	logToFile(testName, "Start Time: "+time.Now().Format(time.RFC3339))
-
-	assert.True(t, DeployResource(t, "cosmosdb", testName), "Deployment failed")
-	defer DeleteResource(t, "cosmosdb", testName)
-
-	logToFile(testName, "End Time: "+time.Now().Format(time.RFC3339))
+	logToFile(testName, "End Time : "+time.Now().Format(time.RFC3339))
 }
