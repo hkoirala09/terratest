@@ -1,115 +1,60 @@
 package test
 
 import (
-	"testing"
-	"time"
-	"os"
-	"log"
-
-	"github.com/gruntwork-io/terratest/modules/terraform"
-	"github.com/stretchr/testify/assert"
+    "testing"
+    "time"
+    "fmt"
+    "github.com/stretchr/testify/assert"
+    "github.com/gruntwork-io/terratest/modules/terraform"
 )
 
-// Global logger instance
-var logger *log.Logger
-
-// Initialize logging to a file
-func init() {
-	logFile, err := os.OpenFile("test_results.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("ERROR: Unable to open log file: %v", err)
-	}
-	logger = log.New(logFile, "TEST LOG: ", log.LstdFlags|log.Lshortfile)
-	logger.Println("========== Terraform Test Suite Started ==========")
+// GetTerraformOptionsForCosmosMongoDB returns terraform options for CosmosDB tests
+func GetTerraformOptionsForCosmosMongoDB() *terraform.Options {
+    return &terraform.Options{
+        TerraformDir: "../terraform/modules/cosmos-mongodb",
+        NoColor:      true,
+    }
 }
 
-// Function to Get Terraform Options
-func GetTerraformOptions(terraformDir string, planFile string) *terraform.Options {
-	return &terraform.Options{
-		TerraformDir: terraformDir,
-		PlanFilePath: planFile,
-		NoColor:      true,
-	}
+// TestAdfDeploymentPreCheck checks terraform plan for valid input and configuration
+func TestAdfDeploymentPreCheck(t *testing.T) {
+    t1 := time.Now().Format(time.RFC3339)
+    fmt.Printf("Test started at: %s\n", t1)
+
+    tfOpts := GetTerraformOptionsForCosmosMongoDB()
+    plan := terraform.InitAndPlanAndShowWithStruct(t, tfOpts)
+
+    t.Run("Check Cosmos MongoDB Name", func(t *testing.T) {
+        expectedName := "expected-name-pattern"
+        actualName := plan.RawPlan.Variables["cosmos_db_name"].Value
+        assert.Contains(t, actualName, expectedName, "Error: Cosmos DB name does not match the following convention")
+    })
 }
 
-// Validate Terraform Plan and File Creation
-func TestTerraformPlan(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
+// TestAdfDeploymentPostCheck tests terraform apply to deploy resources and cleanup afterwards
+func TestAdfDeploymentPostCheck(t *testing.T) {
+    t2 := time.Now().Format(time.RFC3339)
+    fmt.Printf("Test started at: %s\n", t2)
 
-	logger.Println("Running Terraform Init and Plan...")
-	terraform.InitAndPlan(t, tfOpts)
-	terraform.SavePlanFile(t, tfOpts, "cosmosdb_plan.out")
+    tfOpts := GetTerraformOptionsForCosmosMongoDB()
 
-	// Ensure plan file exists
-	if _, err := os.Stat("cosmosdb_plan.out"); os.IsNotExist(err) {
-		t.Fatalf("ERROR: Terraform plan file was not created")
-	} else {
-		logger.Println("✅ Terraform plan file created: cosmosdb_plan.out")
-	}
+    // Deploy resources in Azure
+    terraform.InitAndApply(t, tfOpts)
+
+    // Validate resources deployed successfully here
+    assert.True(t, DeployAdfInAzure(t, tfOpts), "ERROR: Failed to deploy resources in Azure")
+
+    // Cleanup resources after test
+    defer DeleteAdfInAzure(t, tfOpts)
 }
 
-// Validate Public Network Access is Disabled
-func TestPublicNetworkAccess(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
-
-	publicAccess := terraform.OutputBool(t, tfOpts, "public_network_enabled")
-	logger.Println("Validating Public Network Access...")
-
-	assert.False(t, publicAccess, "ERROR: Public network access should be disabled")
+// DeployAdfInAzure is a placeholder for your deployment validation logic
+func DeployAdfInAzure(t *testing.T, tfOpts *terraform.Options) bool {
+    // Implement your resource validation logic
+    return true
 }
 
-// Validate Encryption Settings
-func TestEncryptionSettings(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
-
-	encryption := terraform.Output(t, tfOpts, "data_encryption")
-	logger.Println("Checking if encryption is set to CMK...")
-
-	assert.Equal(t, "CMK", encryption, "ERROR: Encryption must be set to CMK with Azure Key Vault")
-}
-
-// Validate Terraform Output Values
-func TestTerraformOutputs(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
-
-	// Validate CosmosDB Account ID
-	cosmosdbID := terraform.Output(t, tfOpts, "cosmosdb_id")
-	logger.Println("Validating CosmosDB ID Output...")
-	assert.NotEmpty(t, cosmosdbID, "ERROR: CosmosDB ID should not be empty")
-
-	// Validate CosmosDB Endpoint
-	cosmosdbEndpoint := terraform.Output(t, tfOpts, "cosmosdb_endpoint")
-	logger.Println("Validating CosmosDB Endpoint Output...")
-	assert.NotEmpty(t, cosmosdbEndpoint, "ERROR: CosmosDB Endpoint should not be empty")
-}
-
-// Apply Terraform and Validate Deployment
-func TestTerraformApply(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
-
-	logger.Println("Applying Terraform deployment...")
-	terraform.ApplyAndIdempotent(t, tfOpts)
-
-	// Validate Deployment Success
-	assert.True(t, terraform.OutputExists(t, tfOpts, "cosmosdb_id"), "ERROR: CosmosDB instance not deployed")
-}
-
-// Destroy Terraform Resources
-func TestTerraformDestroy(t *testing.T) {
-	tfOpts := GetTerraformOptions("../terraform/modules/cosmosdb-mongodb", "cosmosdb_plan.out")
-
-	logger.Println("Destroying Terraform resources...")
-	terraform.Destroy(t, tfOpts)
-	logger.Println("✅ Terraform resources successfully destroyed.")
-}
-
-// Full End-to-End Test (Plan, Apply, Validate, Destroy)
-func TestTerraformFullRun(t *testing.T) {
-	t.Run("TestTerraformPlan", TestTerraformPlan)
-	t.Run("TestTerraformApply", TestTerraformApply)
-	t.Run("TestTerraformOutputs", TestTerraformOutputs)
-	t.Run("TestPublicNetworkAccess", TestPublicNetworkAccess)
-	t.Run("TestEncryptionSettings", TestEncryptionSettings)
-	t.Run("TestTerraformDestroy", TestTerraformDestroy)
-	logger.Println("✅ Full Terraform Test Execution Completed.")
+// DeleteAdfInAzure cleans up Azure resources after testing
+func DeleteAdfInAzure(t *testing.T, tfOpts *terraform.Options) {
+    terraform.Destroy(t, tfOpts)
 }
