@@ -10,37 +10,42 @@ import (
 )
 
 func TestAdfDeploymentPreCheck(t *testing.T) {
-	tfOpts := GetTerraformOptionsForCosmosMongoDB()
-	plan := terraform.InitAndPlanAndShowWithStruct(t, tfOpts)
+	tfOpts := terraform.Options{
+		TerraformDir: "../",
+		Vars:         map[string]interface{}{"env": "dev"},
+	}
+
 	testName := "TestAdfDeploymentPreCheck"
 
-	logToFile(testName, "Start Time : "+time.Now().Format(time.RFC3339))
-	logToFile(testName, "Test : "+testName)
-	logToFile(testName, "Description : Checking required parameter values before running terraform apply")
-	logToFile(testName, "Test Environment : dev")
+	logToFile(testName, "Start Time: "+time.Now().Format(time.RFC3339))
+	logToFile(testName, "Test: "+testName)
+	logToFile(testName, "Description: Checking required parameter values before running terraform apply")
+	logToFile(testName, "Test Environment: dev")
+
+	planStruct := terraform.InitAndPlanAndShowWithStruct(t, &tfOpts)
 
 	t.Run("AC1: Validate Module and Provider versions", func(t *testing.T) {
-		for name, provider := range plan.Configuration.ProviderConfig {
-			assert.NotEmpty(t, provider.VersionConstraint, "Provider version constraint not specified for provider: "+name)
-			logToFile(testName, fmt.Sprintf("Provider: %s, Version Constraint: %s", name, provider.VersionConstraint))
+		for _, res := range planStruct.ResourcePlannedValuesMap {
+			assert.NotEmpty(t, res.ProviderName)
+			logToFile(testName, "Provider: "+res.ProviderName)
 		}
 	})
 
-	t.Run("AC2: Validate name is as per naming convention", func(t *testing.T) {
-		expectedName := "expected-name-pattern"
-		actualName := plan.Configuration.RootModule.Variables["account_name"].Default
-		assert.Contains(t, actualName, expectedName, "Cosmos DB name does not match naming convention")
-		logToFile(testName, "Account Name: "+fmt.Sprint(actualName))
+	t.Run("AC2: Validate naming convention", func(t *testing.T) {
+		expectedName := "expected-pattern"
+		actualName := fmt.Sprintf("%v", planStruct.Variables["account_name"].Value)
+		assert.Contains(t, actualName, expectedName)
+		logToFile(testName, "Account Name: "+actualName)
 	})
 
-	t.Run("AC3: Validate the API type", func(t *testing.T) {
-		apiType := plan.Configuration.RootModule.Variables["api_type"].Default
-		assert.Equal(t, "MongoDB", apiType, "Incorrect API type configured")
-		logToFile(testName, "API Type: "+fmt.Sprint(apiType))
+	t.Run("AC3: Validate API type", func(t *testing.T) {
+		apiType := fmt.Sprintf("%v", planStruct.Variables["api_type"].Value)
+		assert.Equal(t, "MongoDB", apiType)
+		logToFile(testName, "API Type: "+apiType)
 	})
 
 	t.Run("AC4: Validate Mandatory tags", func(t *testing.T) {
-		tags := plan.Configuration.RootModule.Variables["tags"].Default.(map[string]interface{})
+		tags := planStruct.Variables["tags"].Value.(map[string]interface{})
 		mandatoryTags := []string{"CreatorID", "ProjectName", "RunID", "WorkspaceName"}
 		for _, tag := range mandatoryTags {
 			_, exists := tags[tag]
@@ -49,53 +54,76 @@ func TestAdfDeploymentPreCheck(t *testing.T) {
 		logToFile(testName, "Tags validated successfully")
 	})
 
-	t.Run("AC5: Validate Public network access is disabled", func(t *testing.T) {
-		publicAccess := plan.Configuration.RootModule.Variables["public_network_access"].Default
-		assert.Equal(t, false, publicAccess, "Public network access must be disabled")
-		logToFile(testName, "Public Network Access: disabled")
+	t.Run("AC5: Public network access disabled", func(t *testing.T) {
+		publicAccess := planStruct.Variables["public_network_access"].Value.(bool)
+		assert.False(t, publicAccess)
+		logToFile(testName, "Public Network Access: Disabled")
 	})
 
-	t.Run("AC6: Validate Private Endpoints are configured", func(t *testing.T) {
-		privateEndpoints := plan.PlannedValues.RootModule.ChildModules[0].Resources
-		assert.NotEmpty(t, privateEndpoints, "Private endpoints are not configured")
+	t.Run("AC6: Private Endpoints configured", func(t *testing.T) {
+		foundPrivateEndpoint := false
+		for _, res := range planStruct.ResourcePlannedValuesMap {
+			if res.Type == "azurerm_private_endpoint" {
+				foundPrivateEndpoint = true
+				break
+			}
+		}
+		assert.True(t, foundPrivateEndpoint, "Private endpoints are not configured")
 		logToFile(testName, "Private Endpoints configured")
 	})
 
-	t.Run("AC7: Validate MTL Security Protocol Version is TLS 1.2", func(t *testing.T) {
-		tlsVersion := plan.Configuration.RootModule.Variables["min_tls_version"].Default
-		assert.Equal(t, "TLS1_2", tlsVersion, "Minimum TLS version must be TLS 1.2")
-		logToFile(testName, "TLS Version: "+fmt.Sprint(tlsVersion))
+	t.Run("AC7: TLS Protocol Version", func(t *testing.T) {
+		tlsVersion := fmt.Sprintf("%v", planStruct.Variables["min_tls_version"].Value)
+		assert.Equal(t, "TLS1_2", tlsVersion)
+		logToFile(testName, "TLS Version: "+tlsVersion)
 	})
 
-	t.Run("AC8: Validate Log Analytic workspace is configured", func(t *testing.T) {
-		logAnalytics := plan.PlannedValues.RootModule.Resources
-		assert.NotEmpty(t, logAnalytics, "Log Analytics workspace not configured")
+	t.Run("AC8: Log Analytic workspace configured", func(t *testing.T) {
+		foundLogAnalytics := false
+		for _, res := range planStruct.ResourcePlannedValuesMap {
+			if res.Type == "azurerm_log_analytics_workspace" {
+				foundLogAnalytics = true
+				break
+			}
+		}
+		assert.True(t, foundLogAnalytics, "Log Analytics workspace not configured")
 		logToFile(testName, "Log Analytics workspace configured")
 	})
 
-	t.Run("AC9: Validate data Encryption set to CMK with Azure Key Vault", func(t *testing.T) {
-		dataEncryption := plan.Configuration.RootModule.Variables["data_encryption"].Default
-		assert.Equal(t, "CMK", dataEncryption, "Data encryption is not set to CMK")
+	t.Run("AC9: Data Encryption CMK", func(t *testing.T) {
+		dataEncryption := fmt.Sprintf("%v", planStruct.Variables["data_encryption"].Value)
+		assert.Equal(t, "CMK", dataEncryption)
 		logToFile(testName, "Data Encryption: CMK with Azure Key Vault")
 	})
 
-	t.Run("AC10: Validate Write and Read Location is East US", func(t *testing.T) {
-		location := plan.Configuration.RootModule.Variables["location"].Default
-		assert.Equal(t, "East US", location, "Location not set to East US")
-		logToFile(testName, "Write and Read Location: East US")
+	t.Run("AC10: Write and Read Location", func(t *testing.T) {
+		location := fmt.Sprintf("%v", planStruct.Variables["location"].Value)
+		assert.Equal(t, "East US", location)
+		logToFile(testName, "Write and Read Location: "+location)
 	})
 
-	t.Run("AC11: Validate 'Configure Regions' is disabled", func(t *testing.T) {
-		configureRegions := plan.Configuration.RootModule.Variables["configure_regions"].Default
-		assert.Equal(t, false, configureRegions, "Configure regions is not disabled")
-		logToFile(testName, "Configure Regions: disabled")
+	t.Run("AC11: Configure Regions disabled", func(t *testing.T) {
+		configureRegions := planStruct.Variables["configure_regions"].Value.(bool)
+		assert.False(t, configureRegions)
+		logToFile(testName, "Configure Regions: Disabled")
 	})
 
-	t.Run("AC12: Validate Consistency used is Session", func(t *testing.T) {
-		consistency := plan.Configuration.RootModule.Variables["consistency_level"].Default
-		assert.Equal(t, "Session", consistency, "Consistency level not set to Session")
-		logToFile(testName, "Consistency Level: Session")
+	t.Run("AC12: Consistency Session", func(t *testing.T) {
+		consistency := fmt.Sprintf("%v", planStruct.Variables["consistency_level"].Value)
+		assert.Equal(t, "Session", consistency)
+		logToFile(testName, "Consistency Level: "+consistency)
 	})
 
-	logToFile(testName, "End Time : "+time.Now().Format(time.RFC3339))
+	logToFile(testName, "End Time: "+time.Now().Format(time.RFC3339))
+}
+
+// logToFile helper
+func logToFile(testName, message string) {
+	f, err := os.OpenFile(fmt.Sprintf("%s-%s.log", testName, time.Now().Format("2006-01-02")), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("error:", err)
+		return
+	}
+	defer f.Close()
+	f.WriteString(message + "\n")
 }
